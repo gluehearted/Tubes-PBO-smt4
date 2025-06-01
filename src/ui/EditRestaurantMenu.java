@@ -4,8 +4,16 @@
  */
 package ui;
 
+import db.DatabaseConnection;
 import java.awt.CardLayout;
 import javax.swing.JPanel;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import javax.swing.DefaultListModel;
+import javax.swing.JOptionPane;
+
 
 /**
  *
@@ -19,7 +27,44 @@ public class EditRestaurantMenu extends javax.swing.JPanel {
         this.mainPanel = mainPanel;
         this.cardLayout = cardLayout;
         initComponents();
+        loadRestaurants();
+        jComboBox1.addActionListener(e -> loadMenuItems());
     }
+    
+    private void loadRestaurants() {
+        jComboBox1.removeAllItems();
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String sql = "SELECT name FROM Restaurant";
+            PreparedStatement pst = conn.prepareStatement(sql);
+            ResultSet rs = pst.executeQuery();
+            while (rs.next()) {
+                jComboBox1.addItem(rs.getString("name"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private void loadMenuItems() {
+        String selectedRestaurant = (String) jComboBox1.getSelectedItem();
+        if (selectedRestaurant == null) return;
+
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String sql = "SELECT m.name FROM MenuItem m JOIN Restaurant r ON m.restaurant_id = r.id WHERE r.name = ?";
+            PreparedStatement pst = conn.prepareStatement(sql);
+            pst.setString(1, selectedRestaurant);
+            ResultSet rs = pst.executeQuery();
+            while (rs.next()) {
+                listModel.addElement(rs.getString("name"));
+            }
+            jList1.setModel(listModel);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -117,11 +162,70 @@ public class EditRestaurantMenu extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        // TODO add your handling code here:
+        String restoName = JOptionPane.showInputDialog(this, "Nama restoran:");
+        if (restoName == null || restoName.trim().isEmpty()) return;
+
+        String menuName = JOptionPane.showInputDialog(this, "Nama menu:");
+        if (menuName == null || menuName.trim().isEmpty()) return;
+
+        String priceStr = JOptionPane.showInputDialog(this, "Harga menu:");
+        double price = 0;
+        try {
+            price = Double.parseDouble(priceStr);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Harga tidak valid.");
+            return;
+        }
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // Insert restaurant
+            String sqlResto = "INSERT INTO Restaurant (name) VALUES (?)";
+            PreparedStatement pstResto = conn.prepareStatement(sqlResto, PreparedStatement.RETURN_GENERATED_KEYS);
+            pstResto.setString(1, restoName);
+            pstResto.executeUpdate();
+            ResultSet rs = pstResto.getGeneratedKeys();
+            int restaurantId = -1;
+            if (rs.next()) {
+                restaurantId = rs.getInt(1);
+            }
+
+            // Insert menu item
+            if (restaurantId != -1) {
+                String sqlMenu = "INSERT INTO MenuItem (name, price, restaurant_id) VALUES (?, ?, ?)";
+                PreparedStatement pstMenu = conn.prepareStatement(sqlMenu);
+                pstMenu.setString(1, menuName);
+                pstMenu.setDouble(2, price);
+                pstMenu.setInt(3, restaurantId);
+                pstMenu.executeUpdate();
+
+                JOptionPane.showMessageDialog(this, "Restoran dan menu berhasil ditambahkan!");
+                loadRestaurants(); // Refresh
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Terjadi kesalahan saat menambahkan.");
+        }
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-        // TODO add your handling code here:
+        String selectedMenu = jList1.getSelectedValue();
+        String selectedResto = (String) jComboBox1.getSelectedItem();
+        if (selectedMenu == null || selectedResto == null) return;
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String sql = "DELETE FROM MenuItem WHERE id IN (SELECT m.id FROM MenuItem m JOIN Restaurant r ON m.restaurant_id = r.id WHERE m.name = ? AND r.name = ?)";
+            PreparedStatement pst = conn.prepareStatement(sql);
+            pst.setString(1, selectedMenu);
+            pst.setString(2, selectedResto);
+            int rowsAffected = pst.executeUpdate();
+            if (rowsAffected > 0) {
+                JOptionPane.showMessageDialog(this, "Menu berhasil dihapus!");
+                loadMenuItems();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Gagal menghapus menu.");
+        }
     }//GEN-LAST:event_jButton2ActionPerformed
 
 
